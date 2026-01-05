@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # MongoDB with replica set (required for change streams / offline sync)
+  mongodb:
+    image: mongo:7.0
+    container_name: adaptive-lms-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: adaptive-lms
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - adaptive-lms-network
+
+  # MongoDB replica set initializer
+  mongo-init:
+    image: mongo:7.0
+    container_name: adaptive-lms-mongo-init
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    command: >
+      mongosh --host mongodb:27017 --eval "
+        rs.initiate({
+          _id: 'rs0',
+          members: [{ _id: 0, host: 'mongodb:27017' }]
+        });
+      "
+    networks:
+      - adaptive-lms-network
+    restart: "no"
+
+  # API Server
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    container_name: adaptive-lms-api
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      MONGODB_URI: mongodb://admin:admin123@mongodb:27017/adaptive-lms?authSource=admin
+      MONGODB_REPLICA_SET: rs0
+    volumes:
+      - ./packages/api:/app/packages/api
+      - /app/packages/api/node_modules
+      - ./packages/shared:/app/packages/shared
+      - /app/packages/shared/node_modules
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
+    networks:
+      - adaptive-lms-network
+    command: pnpm --filter @adaptive-lms/api dev
+
+  # Web App (Next.js)
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    container_name: adaptive-lms-web
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+    volumes:
+      - ./packages/web:/app/packages/web
+      - /app/packages/web/node_modules
+      - ./packages/shared:/app/packages/shared
+      - /app/packages/shared/node_modules
+    depends_on:
+      - api
+    networks:
+      - adaptive-lms-network
+    command: pnpm --filter @adaptive-lms/web dev
+
+volumes:
+  mongodb_data:
+    driver: local
+
+networks:
+  adaptive-lms-network:
+    driver: bridge
