@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/error-handler';
 
 // Import routes
 import authRoutes from './routes/auth';
+import usersRoutes from './routes/users';
 import xapiRoutes from './routes/xapi';
 import coursesRoutes from './routes/courses';
 import quizzesRoutes from './routes/quizzes';
@@ -35,6 +36,7 @@ app.get('/health', (req, res) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/xapi', xapiRoutes);
 app.use('/api/courses', coursesRoutes);
 app.use('/api/quizzes', quizzesRoutes);
