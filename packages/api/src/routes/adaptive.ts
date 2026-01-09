@@ -8,6 +8,7 @@ import {
   getCourseCompletion,
   getRecommendedContent,
 } from '../services/adaptive-engine.service';
+import { handleLessonCompletion } from '../services/gamification.service';
 import { Language, transformLesson } from '../services/bilingual-content.service';
 import { logger } from '../utils/logger';
 
@@ -207,6 +208,21 @@ router.post('/users/:userId/lessons/:lessonId/complete', authenticate, async (re
 
     const progress = await LearnerProgress.markCompleted(userId, lessonId);
 
+    // Award gamification rewards
+    let gamificationResult;
+    try {
+      gamificationResult = await handleLessonCompletion(userId, lessonId, progress.timeSpent || 0);
+      logger.info('Gamification rewards awarded for lesson completion', {
+        userId,
+        lessonId,
+        xp: gamificationResult.xp,
+        points: gamificationResult.points,
+        achievements: gamificationResult.achievements.length
+      });
+    } catch (error) {
+      logger.error('Failed to award gamification rewards:', error);
+    }
+
     logger.info('Lesson marked as completed', {
       userId,
       lessonId,
@@ -220,6 +236,7 @@ router.post('/users/:userId/lessons/:lessonId/complete', authenticate, async (re
         status: progress.status,
         completedAt: progress.completedAt,
       },
+      gamification: gamificationResult
     });
   } catch (error) {
     next(error);

@@ -3,6 +3,7 @@ import { QuizItem } from '../models/QuizItem';
 import { QuizAttempt } from '../models/QuizAttempt';
 import { QuizResponse, QuizScore } from '@adaptive-lms/shared';
 import { updateMasteryFromAssessment } from './mastery-tracking.service';
+import { handleQuizCompletion } from './gamification.service';
 import { AppError } from '../middleware/error-handler';
 import { logger } from '../utils/logger';
 
@@ -23,6 +24,11 @@ export interface GradeQuizResult {
   responses: QuizResponse[];
   passed: boolean;
   masteryUpdated: boolean;
+  gamification?: {
+    xp: number;
+    points: number;
+    achievements: any[];
+  };
 }
 
 /**
@@ -147,12 +153,29 @@ export async function gradeQuiz(input: GradeQuizInput): Promise<GradeQuizResult>
   // Determine if passed (>= 70%)
   const passed = percentage >= 70;
 
+  // Award gamification rewards (async, don't wait)
+  const isPerfect = percentage === 100;
+  let gamificationResult;
+  try {
+    gamificationResult = await handleQuizCompletion(userId, quizId, passed, isPerfect);
+    logger.info('Gamification rewards awarded', {
+      userId,
+      quizId,
+      xp: gamificationResult.xp,
+      points: gamificationResult.points,
+      achievements: gamificationResult.achievements.length
+    });
+  } catch (error) {
+    logger.error('Failed to award gamification rewards:', error);
+  }
+
   return {
     attempt,
     score,
     responses: gradedResponses,
     passed,
     masteryUpdated: false, // Will be updated in updateMasteryFromQuiz
+    gamification: gamificationResult
   };
 }
 
