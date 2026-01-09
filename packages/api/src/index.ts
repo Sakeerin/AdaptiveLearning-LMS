@@ -18,6 +18,7 @@ import adaptiveRoutes from './routes/adaptive';
 import quizzesRoutes from './routes/quizzes';
 import tutorRoutes from './routes/tutor';
 import gamificationRoutes from './routes/gamification';
+import syncRoutes from './routes/sync';
 
 dotenv.config();
 
@@ -50,6 +51,7 @@ app.use('/api', adaptiveRoutes);
 app.use('/api/quizzes', quizzesRoutes);
 app.use('/api/tutor', tutorRoutes);
 app.use('/api/gamification', gamificationRoutes);
+app.use('/api/sync', syncRoutes);
 
 // Error handling
 app.use(errorHandler);
