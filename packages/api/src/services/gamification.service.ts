@@ -90,6 +90,16 @@ export async function awardXPAndPoints(
 
     const leveledUp = stats.level > oldLevel;
 
+    // Send level up notification
+    if (leveledUp) {
+      try {
+        const { notifyLevelUp } = await import('./notification.service');
+        await notifyLevelUp(userId, stats.level, stats.xp);
+      } catch (error) {
+        logger.error('Failed to send level up notification:', error);
+      }
+    }
+
     logger.info(
       `Awarded ${xp} XP and ${points} points to user ${userId} for ${reason}. ` +
       `Level: ${oldLevel} -> ${stats.level}, XP: ${oldXP} -> ${stats.xp}`
@@ -301,6 +311,14 @@ export async function checkAndAwardAchievements(userId: string): Promise<any[]> 
           achievement,
           earnedAt: userAchievement.earnedAt
         });
+
+        // Send achievement notification
+        try {
+          const { notifyAchievementEarned } = await import('./notification.service');
+          await notifyAchievementEarned(userId, achievement);
+        } catch (error) {
+          logger.error('Failed to send achievement notification:', error);
+        }
 
         logger.info(`User ${userId} earned achievement: ${achievement.key}`);
       }

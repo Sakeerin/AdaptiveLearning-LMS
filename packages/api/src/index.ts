@@ -19,6 +19,8 @@ import quizzesRoutes from './routes/quizzes';
 import tutorRoutes from './routes/tutor';
 import gamificationRoutes from './routes/gamification';
 import syncRoutes from './routes/sync';
+import notificationsRoutes from './routes/notifications';
+import analyticsRoutes from './routes/analytics';
 
 dotenv.config();
 
@@ -52,6 +54,8 @@ app.use('/api/quizzes', quizzesRoutes);
 app.use('/api/tutor', tutorRoutes);
 app.use('/api/gamification', gamificationRoutes);
 app.use('/api/sync', syncRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Error handling
 app.use(errorHandler);
