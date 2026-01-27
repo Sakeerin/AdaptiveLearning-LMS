@@ -1,5 +1,13 @@
 version: '3.8'
 
+# Adaptive Learning LMS - Docker Compose Configuration
+#
+# Usage:
+#   Development:  docker-compose up -d
+#   Production:   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   With seeding: docker-compose --profile seed up -d
+#   With tools:   docker-compose --profile tools up -d
+
 services:
   # MongoDB with replica set (required for change streams / offline sync)
   mongodb:
@@ -20,8 +28,10 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
+      start_period: 30s
     networks:
       - adaptive-lms-network
+    restart: unless-stopped
 
   # MongoDB replica set initializer
   mongo-init:
@@ -31,11 +41,17 @@ services:
       mongodb:
         condition: service_healthy
     command: >
-      mongosh --host mongodb:27017 --eval "
-        rs.initiate({
-          _id: 'rs0',
-          members: [{ _id: 0, host: 'mongodb:27017' }]
-        });
+      mongosh --host mongodb:27017 -u admin -p admin123 --authenticationDatabase admin --eval "
+        try {
+          rs.status();
+          print('Replica set already initialized');
+        } catch (e) {
+          rs.initiate({
+            _id: 'rs0',
+            members: [{ _id: 0, host: 'mongodb:27017' }]
+          });
+          print('Replica set initialized');
+        }
       "
     networks:
       - adaptive-lms-network
@@ -46,19 +62,29 @@ services:
     build:
       context: .
       dockerfile: packages/api/Dockerfile
+      target: development
     container_name: adaptive-lms-api
     ports:
       - "3001:3001"
     environment:
       NODE_ENV: development
       PORT: 3001
-      MONGODB_URI: mongodb://admin:admin123@mongodb:27017/adaptive-lms?authSource=admin
+      MONGODB_URI: mongodb://admin:admin123@mongodb:27017/adaptive-lms?authSource=admin&replicaSet=rs0
       MONGODB_REPLICA_SET: rs0
+      JWT_SECRET: docker-dev-jwt-secret-change-in-production-12345
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      LOG_LEVEL: debug
+      ENABLE_SCHEDULER: "true"
+      CORS_ORIGINS: http://localhost:3000,http://localhost:3001
+      EMAIL_MOCK_MODE: "true"
+      PUSH_MOCK_MODE: "true"
     volumes:
-      - ./packages/api:/app/packages/api
-      - /app/packages/api/node_modules
-      - ./packages/shared:/app/packages/shared
-      - /app/packages/shared/node_modules
+      - ./packages/api/src:/app/packages/api/src
+      - ./packages/shared/src:/app/packages/shared/src
+      - api_node_modules:/app/node_modules
+      - api_package_modules:/app/packages/api/node_modules
+      - shared_package_modules:/app/packages/shared/node_modules
     depends_on:
       mongodb:
         condition: service_healthy
@@ -66,32 +92,111 @@ services:
         condition: service_completed_successfully
     networks:
       - adaptive-lms-network
-    command: pnpm --filter @adaptive-lms/api dev
+    restart: unless-stopped
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
-  # Web App (Next.js)
-  web:
+  # Seed data runner (only runs with --profile seed)
+  seed:
     build:
       context: .
-      dockerfile: packages/web/Dockerfile
-    container_name: adaptive-lms-web
-    ports:
-      - "3000:3000"
+      dockerfile: packages/api/Dockerfile
+      target: development
+    container_name: adaptive-lms-seed
+    profiles:
+      - seed
     environment:
       NODE_ENV: development
-      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      MONGODB_URI: mongodb://admin:admin123@mongodb:27017/adaptive-lms?authSource=admin&replicaSet=rs0
     volumes:
-      - ./packages/web:/app/packages/web
-      - /app/packages/web/node_modules
+      - ./packages/api:/app/packages/api
       - ./packages/shared:/app/packages/shared
-      - /app/packages/shared/node_modules
     depends_on:
-      - api
+      mongodb:
+        condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
     networks:
       - adaptive-lms-network
-    command: pnpm --filter @adaptive-lms/web dev
+    command: pnpm --filter @adaptive-lms/api run seed
+    restart: "no"
+
+  # Redis (for production rate limiting and caching)
+  redis:
+    image: redis:7-alpine
+    container_name: adaptive-lms-redis
+    profiles:
+      - production
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - adaptive-lms-network
+    restart: unless-stopped
+
+  # Mongo Express (MongoDB admin UI for development)
+  mongo-express:
+    image: mongo-express:1.0.2-20
+    container_name: adaptive-lms-mongo-express
+    profiles:
+      - tools
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: admin123
+      ME_CONFIG_MONGODB_URL: mongodb://admin:admin123@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin123
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - adaptive-lms-network
+    restart: unless-stopped
+
+  # Web App (Next.js) - placeholder for future implementation
+  # web:
+  #   build:
+  #     context: .
+  #     dockerfile: packages/web/Dockerfile
+  #     target: development
+  #   container_name: adaptive-lms-web
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     NODE_ENV: development
+  #     NEXT_PUBLIC_API_URL: http://localhost:3001/api
+  #   volumes:
+  #     - ./packages/web:/app/packages/web
+  #     - ./packages/shared:/app/packages/shared
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - adaptive-lms-network
+  #   command: pnpm --filter @adaptive-lms/web dev
 
 volumes:
   mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+  api_node_modules:
+    driver: local
+  api_package_modules:
+    driver: local
+  shared_package_modules:
     driver: local
 
 networks:

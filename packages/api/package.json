@@ -10,7 +10,9 @@
     "clean": "rm -rf dist",
     "type-check": "tsc --noEmit",
     "test": "jest",
-    "lint": "eslint src/**/*.ts"
+    "lint": "eslint src/**/*.ts",
+    "seed": "tsx src/seeds/index.ts",
+    "seed:achievements": "tsx src/seeds/achievements.seed.ts"
   },
   "dependencies": {
     "@adaptive-lms/shared": "workspace:*",
@@ -25,7 +27,8 @@
     "winston": "^3.11.0",
     "express-rate-limit": "^7.1.5",
     "openai": "^4.24.1",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "node-cron": "^3.0.3"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

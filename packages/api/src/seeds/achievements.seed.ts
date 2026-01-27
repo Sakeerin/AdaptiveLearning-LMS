@@ -445,22 +445,24 @@ const defaultAchievements = [
   }
 ];
 
-export async function seedAchievements() {
+interface SeedResult {
+  count: number;
+}
+
+export async function seedAchievements(): Promise<SeedResult> {
   try {
-    logger.info('Starting achievement seeding...');
+    let count = 0;
 
     for (const achievementData of defaultAchievements) {
       const existing = await Achievement.findOne({ key: achievementData.key });
       if (!existing) {
         const achievement = new Achievement(achievementData);
         await achievement.save();
-        logger.info(`Created achievement: ${achievementData.key}`);
-      } else {
-        logger.info(`Achievement already exists: ${achievementData.key}`);
+        count++;
       }
     }
 
-    logger.info(`Achievement seeding completed. Total: ${defaultAchievements.length} achievements`);
+    return { count };
   } catch (error) {
     logger.error('Error seeding achievements:', error);
     throw error;
